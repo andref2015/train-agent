@@ -1,122 +1,135 @@
-# ElevenLabs Setup Guide for Estonian Train Finder API
+# ElevenLabs AI Customer Support Integration
 
-## 🚀 API Overview
+This API provides real-time Estonian train departure times for integration with ElevenLabs AI customer support agents.
 
-This API transforms the Estonian train scraper into a tool for your ElevenLabs AI customer support agent. It provides real-time train schedules between Estonian cities.
+## API Endpoint
 
-## 📋 API Endpoints
+**Base URL**: `https://train-agent-production.up.railway.app`
 
-### Main Endpoint: `/trains`
-- **Method**: GET
-- **Purpose**: Find trains between Estonian cities
-- **Perfect for**: AI agents helping customers with travel planning
+### Get Train Times
+**Endpoint**: `GET /trains`
 
-## ⚙️ ElevenLabs Tool Configuration
+**Parameters**:
+- `from_city` (required): Departure city
+- `to_city` (required): Destination city  
+- `date` (optional): Date in YYYY-MM-DD format or "tomorrow" (default: "tomorrow")
+- `after_time` (optional): Only show trains after this time in HH:MM format (default: "15:00")
+- `limit` (optional): Maximum number of results 1-10 (default: 3)
 
-### 1. Add Tool in ElevenLabs Dashboard
+**Supported Cities**: Tallinn, Tartu, Narva, Pärnu, Viljandi
 
-Go to your Agent settings → Tools → Add Tool → Webhook
+## ElevenLabs Webhook Integration
 
-**Tool Configuration:**
+### Step 1: Create Webhook Tool in ElevenLabs
+
+1. Go to your ElevenLabs dashboard
+2. Navigate to "Conversation AI" → "Tools"
+3. Click "Create Tool" → "Webhook"
+4. Configure as follows:
+
+**Tool Name**: `get_train_times`
+
+**Description**: 
 ```
-Name: find_estonian_trains
-Description: Find train schedules between Estonian cities with departure and arrival times
-Method: GET
-URL: https://train-voice-agent.vercel.app/trains
-```
-
-### 2. Query Parameters Setup
-
-Configure these parameters in ElevenLabs:
-
-| Parameter | Type | Required | Description | Example |
-|-----------|------|----------|-------------|---------|
-| `from_city` | string | Yes | Departure city | "Tallinn" |
-| `to_city` | string | Yes | Destination city | "Tartu" |
-| `date` | string | Yes | Travel date | "2025-06-21" or "tomorrow" |
-| `after_time` | string | No | Show trains after this time | "15:00" |
-| `limit` | integer | No | Max trains to return | 3 |
-
-### 3. System Prompt for ElevenLabs Agent
-
-Add this to your agent's system prompt:
-
-```
-You are a helpful Estonian travel assistant with access to real-time train schedules. 
-
-When customers ask about trains between Estonian cities, use the find_estonian_trains tool. 
-
-SUPPORTED CITIES: Tallinn, Tartu, Narva, Pärnu, Viljandi
-
-GUIDELINES:
-1. Always ask for departure city, destination city, and travel date
-2. Default to showing trains after 15:00 (3 PM) unless customer specifies otherwise
-3. Present results in a friendly, conversational way
-4. If a city is not supported, politely suggest the nearest supported city
-5. Use "tomorrow" for next day travel, or YYYY-MM-DD format for specific dates
-
-EXAMPLE RESPONSES:
-- "I found 3 trains from Tallinn to Tartu tomorrow after 3 PM. The earliest departs at 15:32 and arrives at 18:19. Would you like to see all options?"
-- "For June 21st, there are trains departing at 15:32, 16:52, and 18:11. Which time works best for you?"
-
-Always be helpful and provide clear departure and arrival times.
+Get real-time Estonian train departure and arrival times between cities. Use this when customers ask about train schedules, departure times, or travel between Estonian cities.
 ```
 
-### 4. Example API Calls
-
-The AI agent will make calls like:
-
+**Webhook URL**: 
 ```
-GET /trains?from_city=Tallinn&to_city=Tartu&date=tomorrow&after_time=15:00&limit=3
+https://train-agent-production.up.railway.app/trains
 ```
 
-### 5. API Response Format
+**HTTP Method**: `GET`
 
-The agent receives clean JSON:
+**Parameters**:
 
+1. **from_city**
+   - Type: String
+   - Required: Yes
+   - Description: "Departure city (Tallinn, Tartu, Narva, Pärnu, or Viljandi)"
+
+2. **to_city**
+   - Type: String  
+   - Required: Yes
+   - Description: "Destination city (Tallinn, Tartu, Narva, Pärnu, or Viljandi)"
+
+3. **date**
+   - Type: String
+   - Required: No
+   - Description: "Date in YYYY-MM-DD format or 'tomorrow' (default: tomorrow)"
+
+4. **after_time**
+   - Type: String
+   - Required: No
+   - Description: "Only show trains after this time in HH:MM format (default: 15:00)"
+
+5. **limit**
+   - Type: Integer
+   - Required: No
+   - Description: "Maximum number of results 1-10 (default: 3)"
+
+### Step 2: Configure AI Agent Prompt
+
+Add this to your AI agent's system prompt:
+
+```
+You are a helpful customer support agent for Estonian railway services. When customers ask about train times, departures, or travel between Estonian cities, use the get_train_times tool.
+
+Supported cities: Tallinn, Tartu, Narva, Pärnu, Viljandi
+
+When customers ask about trains:
+1. Extract the departure and destination cities
+2. Ask for clarification if the date isn't specified (default to "tomorrow")
+3. Use the get_train_times tool with appropriate parameters
+4. Present the results in a friendly, conversational manner
+
+Example: "I found 3 trains from Tallinn to Tartu tomorrow after 3 PM: The first train departs at 16:27 and arrives at 18:46..."
+```
+
+## Example API Responses
+
+### Successful Response
 ```json
 {
-  "success": true,
-  "route": {
-    "from": "Tallinn",
-    "to": "Tartu", 
-    "date": "2025-06-21",
-    "date_display": "June 21, 2025"
-  },
+  "from_city": "Tallinn",
+  "to_city": "Tartu", 
+  "date": "2024-12-21",
+  "after_time": "15:00",
   "trains": [
     {
-      "departure_time": "15:32",
-      "arrival_time": "18:19",
-      "duration_display": "15:32 → 18:19"
+      "departure": "16:27",
+      "arrival": "18:46", 
+      "display": "Depart: 16:27 → Arrive: 18:46"
+    },
+    {
+      "departure": "18:27",
+      "arrival": "20:46",
+      "display": "Depart: 18:27 → Arrive: 20:46"
     }
   ],
-  "summary": {
-    "total_found": 3,
-    "message": "Found 3 trains from Tallinn to Tartu after 15:00"
-  },
-  "execution_time_seconds": 4.41
+  "execution_time_seconds": 4.2
 }
 ```
 
-## 🏃‍♂️ Quick Test
-
-Test your API with:
-```bash
-curl "https://train-voice-agent.vercel.app/trains?from_city=Tallinn&to_city=Tartu&date=tomorrow&after_time=15:00&limit=3"
+### Error Response
+```json
+{
+  "detail": "Unsupported departure city. Supported: ['Tallinn', 'Tartu', 'Narva', 'Pärnu', 'Viljandi']"
+}
 ```
 
-## 🚀 Deployment to Vercel
+## Testing URLs
 
-1. Push your code to GitHub
-2. Connect GitHub repo to Vercel
-3. Deploy automatically
-4. Use the Vercel URL in ElevenLabs tool configuration
+Test the API directly with these URLs:
 
-## 📞 Customer Support Use Cases
+- Basic info: `https://train-agent-production.up.railway.app/`
+- Tallinn to Tartu: `https://train-agent-production.up.railway.app/trains?from_city=tallinn&to_city=tartu`
+- With date: `https://train-agent-production.up.railway.app/trains?from_city=tallinn&to_city=tartu&date=2024-12-21&after_time=16:00`
 
-Your AI agent can now handle:
-- "I need a train from Tallinn to Tartu tomorrow afternoon"
-- "What trains are available from Narva to Tallinn after 3 PM?"
-- "Show me morning trains from Pärnu to Tallinn on June 25th"
+## Technical Details
 
+- **Response Time**: ~4-6 seconds (real-time web scraping)
+- **Deployment**: Railway.app with Selenium WebDriver
+- **Reliability**: Production-ready with error handling
+- **CORS**: Enabled for cross-origin requests 
 The agent will automatically call the API and provide natural, helpful responses! 🎯 

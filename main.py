@@ -1,11 +1,19 @@
 import os
 import re
-import requests
+import time
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-import time
+
+# Selenium imports
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 app = FastAPI(title="Estonian Train Times API", version="1.0.0")
 
@@ -50,51 +58,87 @@ def is_time_after(time_str: str, after_time: str) -> bool:
     
     return time_minutes >= after_minutes
 
-def scrape_train_times_simple(from_city: str, to_city: str, date: str, after_time: str = "15:00", limit: int = 3) -> List[Dict[str, Any]]:
-    """
-    Simplified scraper using requests - may not work if site requires JavaScript
-    """
+def create_driver():
+    """Create and configure Chrome WebDriver"""
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-plugins")
+    chrome_options.add_argument("--disable-images")
+    chrome_options.add_argument("--disable-javascript")
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    
+    # For Railway deployment
+    chrome_binary_path = os.environ.get("CHROME_BIN")
+    if chrome_binary_path:
+        chrome_options.binary_location = chrome_binary_path
+    
     try:
-        # Construct URL
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        return driver
+    except Exception as e:
+        print(f"Error creating driver: {e}")
+        return None
+
+def scrape_train_times(from_city: str, to_city: str, date: str, after_time: str = "15:00", limit: int = 3) -> List[Dict[str, Any]]:
+    """Scrape train times using Selenium"""
+    driver = None
+    try:
+        driver = create_driver()
+        if not driver:
+            return []
+        
+        # Navigate to the URL
         url = f"https://elron.pilet.ee/en/otsing/{from_city}/{to_city}/{date}"
+        driver.get(url)
         
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+        # Wait for the page to load
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        )
         
-        # Make request
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
+        # Get page source and extract times with regex
+        page_source = driver.page_source
         
-        # Extract train times using regex (this is a fallback approach)
-        # Looking for patterns like "20:27" followed by another time "22:04"
-        time_pattern = r'([0-1]?[0-9]|2[0-3]):([0-5][0-9])'
-        times = re.findall(time_pattern, response.text)
+        # Pattern to match times like "20:27" followed by another time "22:04"
+        time_pattern = r'([0-1]?[0-9]|2[0-3]):([0-5][0-9])([0-1]?[0-9]|2[0-3]):([0-5][0-9])'
+        matches = re.findall(time_pattern, page_source)
         
-        # Convert tuples to time strings
-        time_strings = [f"{hour.zfill(2)}:{minute}" for hour, minute in times]
-        
-        # Group times in pairs (departure, arrival)
         train_times = []
-        for i in range(0, len(time_strings), 2):
-            if i + 1 < len(time_strings):
-                departure = time_strings[i]
-                arrival = time_strings[i + 1]
-                
-                # Filter by time
-                if is_time_after(departure, after_time):
-                    train_times.append({
-                        "departure": departure,
-                        "arrival": arrival,
-                        "display": f"Depart: {departure} → Arrive: {arrival}"
-                    })
+        for match in matches:
+            departure = f"{match[0].zfill(2)}:{match[1]}"
+            arrival = f"{match[2].zfill(2)}:{match[3]}"
+            
+            # Filter by time
+            if is_time_after(departure, after_time):
+                train_times.append({
+                    "departure": departure,
+                    "arrival": arrival,
+                    "display": f"Depart: {departure} → Arrive: {arrival}"
+                })
         
-        # Return limited results
-        return train_times[:limit]
+        # Remove duplicates and limit results
+        seen = set()
+        unique_trains = []
+        for train in train_times:
+            train_key = f"{train['departure']}-{train['arrival']}"
+            if train_key not in seen:
+                seen.add(train_key)
+                unique_trains.append(train)
+        
+        return unique_trains[:limit]
         
     except Exception as e:
-        print(f"Error in simplified scraper: {e}")
+        print(f"Error scraping train times: {e}")
         return []
+    finally:
+        if driver:
+            driver.quit()
 
 @app.get("/")
 async def root():
@@ -144,7 +188,7 @@ async def get_trains(
     to_city_proper = SUPPORTED_CITIES[to_city]
     
     # Scrape train times
-    trains = scrape_train_times_simple(from_city_proper, to_city_proper, date, after_time, limit)
+    trains = scrape_train_times(from_city_proper, to_city_proper, date, after_time, limit)
     
     execution_time = round(time.time() - start_time, 2)
     
@@ -154,8 +198,7 @@ async def get_trains(
         "date": date,
         "after_time": after_time,
         "trains": trains,
-        "execution_time_seconds": execution_time,
-        "note": "Simplified scraper - may have limited accuracy. For better results, use Selenium version."
+        "execution_time_seconds": execution_time
     }
 
 if __name__ == "__main__":

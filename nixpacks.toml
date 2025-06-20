@@ -1,0 +1,6 @@
+[phases.setup]
+nixPkgs = ['chromium', 'chromedriver']
+
+[variables]
+CHROME_BIN = '/nix/store/chromium'
+CHROMEDRIVER_PATH = '/nix/store/chromedriver' 
